@@ -49,8 +49,9 @@ public class MovieService implements AppService {
         String movieName = inputString("# 영화명: ");
         String nation = inputString("# 국가명: ");
         int pubYear = inputInteger("# 발매연도: ");
+        int stock = inputInteger("# 재고수량: ");
 
-        Movie newMovie = new Movie(movieName, nation, pubYear);
+        Movie newMovie = new Movie(movieName, nation, pubYear, stock);
 
         movieRepository.addMovie(newMovie);
 

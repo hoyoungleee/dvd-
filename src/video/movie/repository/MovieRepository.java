@@ -19,39 +19,12 @@ public class MovieRepository {
 
     private static final Map<Integer, Movie> movieDatabase = new HashMap<>();
 
-    static {
-        insertTestMovieData();
-    }
 
-    //테스트 데이터 생성 및 삽입
-    private static void insertTestMovieData() {
-        Movie movie1 = new Movie("인터스텔라", "미국", 2014);
-        Movie movie2 = new Movie("포레스트 검프", "미국", 1994);
-        Movie movie3 = new Movie("너의 이름은", "일본", 2017);
-        Movie movie4 = new Movie("라라랜드", "미국", 2016);
-        Movie movie5 = new Movie("레옹", "프랑스", 1994);
-        Movie movie6 = new Movie("어바웃 타임", "영국", 2013);
-        Movie movie7 = new Movie("타이타닉", "미국", 1998);
-        Movie movie8 = new Movie("인생은 아름다워", "이탈리아", 1999);
-        Movie movie9 = new Movie("쇼생크 탈출", "미국", 1995);
-        Movie movie10 = new Movie("기생충", "대한민국", 2019);
-
-        movieDatabase.put(movie1.getSerialNumber(), movie1);
-        movieDatabase.put(movie2.getSerialNumber(), movie2);
-        movieDatabase.put(movie3.getSerialNumber(), movie3);
-        movieDatabase.put(movie4.getSerialNumber(), movie4);
-        movieDatabase.put(movie5.getSerialNumber(), movie5);
-        movieDatabase.put(movie6.getSerialNumber(), movie6);
-        movieDatabase.put(movie7.getSerialNumber(), movie7);
-        movieDatabase.put(movie8.getSerialNumber(), movie8);
-        movieDatabase.put(movie9.getSerialNumber(), movie9);
-        movieDatabase.put(movie10.getSerialNumber(), movie10);
-    }
 
     public void addMovie(Movie movie) {
         //컬럼 지정 안하고 바로 values로 넣을떄는 Default 일지라도 컬럼 개수 순서 맞춰서 넣어줘야
         //insert에 거부당하지 않는다.
-        String sql = "INSERT INTO MOVIES VALUES(MOVIE_SEQ.NEXTVAL,?,?,?,?)";
+        String sql = "INSERT INTO MOVIES VALUES(MOVIE_SEQ.NEXTVAL,?,?,?,?,?,?)";
         try(Connection connection = DBConnectionManager.getConnection();
             PreparedStatement prsmt = connection.prepareStatement(sql);) {
 
@@ -59,6 +32,8 @@ public class MovieRepository {
             prsmt.setString(2,movie.getNation());
             prsmt.setInt(3,movie.getPubYear());
             prsmt.setString(4, "Y");
+            prsmt.setInt(5,movie.getStock());
+            prsmt.setString(6, "Y");
 
             prsmt.executeUpdate();
         } catch (SQLException e) {
@@ -68,14 +43,16 @@ public class MovieRepository {
 
     public List<Movie> searchMovieList(Condition condition, String keyword) throws Exception {
         List<Movie> searchList = new ArrayList<>();
-        String sql = "SELECT * FROM movies ";
+        String sql = "SELECT * FROM movies WHERE 1=1 ";
         if (condition == PUB_YEAR) {
-            sql += "where PUB_YEAR LIKE ?";
+            sql += "AND PUB_YEAR LIKE ? ";
         } else if (condition == NATION) {
-            sql += "where NATION LIKE ?";
+            sql += "AND NATION LIKE ? ";
         } else if (condition == TITLE) {
-            sql += "where MOVIE_NAME LIKE ?";
+            sql += "AND MOVIE_NAME LIKE ? ";
         }
+        sql += "AND USE_YN = 'Y'";
+
         try(Connection conn = DBConnectionManager.getConnection();
         PreparedStatement prsmt = conn.prepareStatement(sql)){
             if(condition != ALL){
@@ -100,7 +77,7 @@ public class MovieRepository {
 
 
     public void deleteMovie(int delMovieNum) {
-        String sql = "DELETE FROM movies WHERE serial_number = ? ";
+        String sql = "UPDATE movies SET USE_YN = 'N' ,RENTAL = 'N' WHERE SERIAL_NUMBER= ?";
         try(Connection conn = DBConnectionManager.getConnection();
         PreparedStatement prsmt = conn.prepareStatement(sql)) {
             prsmt.setInt(1,delMovieNum);
@@ -110,10 +87,12 @@ public class MovieRepository {
         }
     }
 
+
+
     public List<Movie> searchByRental(boolean possible) {
         List<Movie> searchedList = new ArrayList<>();
 
-        String sql = "SELECT * FROM MOVIES WHERE rental = ?";
+        String sql = "SELECT * FROM MOVIES WHERE rental = ? AND USE_YN = 'Y' AND STOCK > 0 ";
 
         try(Connection connection = DBConnectionManager.getConnection();
          PreparedStatement prsmt = connection.prepareStatement(sql)){
@@ -132,7 +111,7 @@ public class MovieRepository {
 
     //ResultSet에서 추출한 결과를 Movie 객체로 포장해주는 헬퍼 메서드
     private static Movie createMovieFromResultSet(ResultSet rs) throws SQLException {
-        Movie movie = new Movie(rs.getString("MOVIE_NAME"), rs.getString("NATION"), rs.getInt("PUB_YEAR"));
+        Movie movie = new Movie(rs.getString("MOVIE_NAME"), rs.getString("NATION"), rs.getInt("PUB_YEAR"),rs.getInt("STOCK"));
         movie.setRental(rs.getString("RENTAL").equals("Y"));
         movie.setSerialNumber(rs.getInt("SERIAL_NUMBER"));
         return movie;

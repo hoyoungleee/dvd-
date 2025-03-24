@@ -26,7 +26,7 @@ public class UserRepository {
 
         //2. 실행하고자 하는 SQL을 문자열로 작성
         //sql의 특정변수값이나 객체의 필드값이 들어가야 한다면 ?로 자리를 표시해 놓으세요.
-        String sql = "INSERT INTO users VALUES(user_seq.NEXTVAL,?,?,?)";
+        String sql = "INSERT INTO users VALUES(user_seq.NEXTVAL,?,?,?,?)";
         // 1. DB 접속 할수있게 해주는 객체를 받아오자.
         // try with resources
         // 자바 8버전부터 제공되는 문법
@@ -42,6 +42,7 @@ public class UserRepository {
             prtmt.setString(1, user.getUserName());
             prtmt.setString(2, user.getPhoneNumber());
             prtmt.setString(3, user.getGrade().toString());
+            prtmt.setString(4, "N");
 
             // 5. sql 실행 명령을 내리세요.
             //executeUpdate() : INSERT, UPDATE, DELETE
@@ -56,7 +57,7 @@ public class UserRepository {
     public List<User> findUserByName(String userName) {
         List<User> userList = new ArrayList<>();
 
-        String sql = "SELECT * FROM users WHERE user_name = ?";
+        String sql = "SELECT * FROM users WHERE user_name = ? AND DEL_YN = 'N'";
 
         try(Connection conn = DBConnectionManager.getConnection();
         PreparedStatement pstmt = conn.prepareStatement(sql)){
@@ -79,11 +80,10 @@ public class UserRepository {
     }
 
     public void deleteUser(int delUserNum) {
-        String sql = "DELETE FROM USERS WHERE USER_NUMBER= ?";
+        String sql = "UPDATE USERS SET DEL_YN = 'Y' WHERE USER_NUMBER= ?";
         try(Connection conn = DBConnectionManager.getConnection();
         PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, delUserNum);
-
             pstmt.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);

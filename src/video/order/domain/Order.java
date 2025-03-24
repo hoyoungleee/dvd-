@@ -13,13 +13,6 @@ public class Order {
     private LocalDate orderDate;
     private LocalDate returnDate;
 
-    public int getOrderId() {
-        return orderId;
-    }
-
-    public void setOrderId(int orderId) {
-        this.orderId = orderId;
-    }
     // 연체료 속성 추가해야됨.
     private int overdueCharge;
     private int overdueDay;
@@ -29,6 +22,14 @@ public class Order {
         this.movie = movie;
         this.orderDate = LocalDate.now();
         this.returnDate = this.orderDate.plusDays(3);
+    }
+
+    public int getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(int orderId) {
+        this.orderId = orderId;
     }
 
     public User getUser() {
@@ -81,8 +82,6 @@ public class Order {
 
     @Override
     public String toString() {
-        this.overdueDay = OverduePolicy.calculateOverdueDay(this);
-        this.overdueCharge = OverduePolicy.calculateOverdueCharge(this);
         return
                 "## 대여영화번호: " + movie.getSerialNumber() +
                         ", 대여영화명: " + movie.getMovieName() +
@@ -94,7 +93,6 @@ public class Order {
     }
 
 }
-
 
 
 

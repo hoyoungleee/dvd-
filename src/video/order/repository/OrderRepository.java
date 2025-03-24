@@ -13,74 +13,115 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-//Orders 테이블의 CRUD 연산을 담당하는 클래스
-//CRUD : Create Read Update Deleteee
+// Orders 테이블의 CRUD 연산을 담당하는 클래스
+// CRUD: Create Read Update Delete
 public class OrderRepository {
 
-    //대여 프로세스를 하나로 묶어서 처리
-    public User processRental(Order order){
-        Connection conn =null;
-        try{
+    // 대여 프로세스를 하나의 트랜잭션으로 묶어서 처리.
+    public User processRental(Order order) {
+        Connection conn = null;
+        try {
             conn = DBConnectionManager.getConnection();
-            conn.setAutoCommit(false); //트랜잭션 시작.
+            conn.setAutoCommit(false); // 트랜잭션 시작.
 
-            // 1. 영화 대여 처리 (orders 테이블에 insert)
-            addOrder(conn,order);
-            // 2. 영화 상태 업데이트 (rental = 'N')
-            updateMovieRentalStatus(conn, order.getMovie().getSerialNumber(), "N");
+
+            addNewOrder(conn, order);
+
+
             // 3. 사용자의 총 결제금액 계산
-            int totalCharge = calculateTotalCharge(conn, order);
+            int totalCharges = calculateTotalCharges(conn, order);
 
             // 4. 필요하다면 사용자 등급 업데이트 (기준치에 충족되는 회원만)
-            Grade before = order.getUser().getGrade();
-            order.getUser().setTotalPaying(totalCharge);
-            if(order.getUser().getGrade() != before){
-                updateUserGrade(conn, order.getUser());
+            Grade before = order.getUser().getGrade(); // 기존 등급을 얻어옴.
+            order.getUser().setTotalPaying(totalCharges); // 총 결제금액으로 등급을 재조정
+            if (order.getUser().getGrade() != before) { // 재조정 후 등급에 변화가 생겼다면
+                updateUserGrade(conn, order.getUser()); // DB에 update
             }
 
-            conn.commit(); // 문제가 없다면 트랜잭션 커밋
+            conn.commit(); // 트랜잭션 커밋
         } catch (Exception e) {
             e.printStackTrace();
             try {
-                conn.rollback(); // 오류 발생시 롤백
+                conn.rollback(); // 오류 발생 시 롤백
             } catch (SQLException ex) {
                 ex.printStackTrace();
             }
-
-        }finally {
-            if(conn != null) {
-                try {
-                    // autoCommit 원래대로 활성화.
-                    conn.setAutoCommit(true);
-                } catch (SQLException e) {
-                    throw new RuntimeException(e);
-                }
+        } finally {
+            try {
+                // autoCommit 원래대로 활성화.
+                if (conn != null)  conn.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
             }
         }
+        return order.getUser();
+    }
 
-        return  order.getUser();
+    private void addNewOrder(Connection conn, Order order) throws Exception {
+
+        // 0. 영화 재고 확인 ( 없으면 예외 던짐)
+        int stock = getStock(conn, order);
+
+        if(stock == 0 ){
+            throw new Exception();
+        }
+        // 1. 영화 대여 처리 (orders 테이블에 insert)
+        try {
+            addOrder(conn, order);
+            String possible = "N";
+            // 2. 영화 상태 업데이트 (rental = 'N')
+            if(stock == 0){
+                possible = "N";
+            };
+            updateMovieRentalStatus(conn, order.getMovie().getSerialNumber(), possible);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
     }
 
-    public List<Map<String, Object>> showImpossibleRentalList(){
-        //영화명(movies), 현재대여자(users), 반납예정일 (orders)출력일
+    public List<Map<String, Object>> showRentalListByUserNumber(int userNumber) {
+        List<Map<String, Object>> rentalList = new ArrayList<>();
         String sql = "SELECT " +
-                "    m.MOVIE_NAME, " +
-                "    u.USER_NAME, " +
-                "    u.PHONE_NUMBER, " +
-                "    o.return_date " +
-                "from orders o " +
-                "JOIN users u " +
-                "    ON o.user_number = u.user_number " +
-                "JOIN movies m " +
-                "    ON o.serial_number = m.serial_number " +
-                "WHERE m.RENTAL = 'N' " +
-                "ORDER BY o.return_date ASC ";
+                "o.order_id, m.serial_number, m.movie_name, o.order_date, o.return_date " +
+                "FROM orders o " +
+                "JOIN movies m ON o.serial_number = m.serial_number " +
+                "WHERE o.user_number = ? " +
+                "AND o.return_status = 'N' " +
+                "ORDER BY o.order_date ASC";
+        try(Connection conn = DBConnectionManager.getConnection();
+            PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, userNumber);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("orderId", rs.getInt("order_id"));
+                map.put("serialNumber", rs.getInt("serial_number"));
+                map.put("movieName", rs.getString("movie_name"));
+                map.put("orderDate", rs.getDate("order_date"));
+                map.put("returnDate", rs.getDate("return_date"));
+                rentalList.add(map);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return rentalList;
+    }
+
+    public List<Map<String, Object>> showImpossibleRentalList() {
+        String sql = "SELECT " +
+                "m.movie_name, u.user_name, u.phone_number, o.return_date " +
+                "FROM movies m " +
+                "JOIN orders o ON m.serial_number = o.serial_number " +
+                "JOIN users u ON o.user_number = u.user_number " +
+                "WHERE o.RETURN_STATUS = 'N' " +
+                "ORDER BY o.return_date ASC";
+
         List<Map<String, Object>> rentalList = new ArrayList<>();
         try(Connection conn = DBConnectionManager.getConnection();
-        PreparedStatement psrt = conn.prepareStatement(sql);
-        ResultSet rs = psrt.executeQuery()) {
-            while (rs.next()){
+            PreparedStatement pstmt = conn.prepareStatement(sql);
+            ResultSet rs = pstmt.executeQuery()) {
+            while (rs.next()) {
                 Map<String, Object> row = new HashMap<>();
                 row.put("movieName", rs.getString("movie_name"));
                 row.put("userName", rs.getString("user_name"));
@@ -90,21 +131,21 @@ public class OrderRepository {
             }
 
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            e.printStackTrace();
         }
         return rentalList;
     }
 
     private void updateUserGrade(Connection conn, User user) throws Exception {
         String sql = "UPDATE users SET grade = ? WHERE user_number = ?";
-        try(PreparedStatement prst = conn.prepareStatement(sql)) {
-            prst.setString(1, user.getGrade().toString());
-            prst.setInt(2, user.getUserNumber());
-            prst.executeUpdate();
+        try(PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, user.getGrade().toString());
+            pstmt.setInt(2, user.getUserNumber());
+            pstmt.executeUpdate();
         }
     }
 
-    private int calculateTotalCharge(Connection conn, Order order) throws Exception {
+    private int calculateTotalCharges(Connection conn, Order order) throws Exception {
         String sql = "SELECT " +
                 "u.user_number, u.user_name, " +
                 "o.order_id, m.pub_year, o.order_date " +
@@ -113,50 +154,129 @@ public class OrderRepository {
                 "ON u.user_number = o.user_number " +
                 "JOIN movies m ON o.serial_number = m.serial_number " +
                 "WHERE u.user_number = " + order.getUser().getUserNumber();
-
         int totalCharges = 0;
         try(PreparedStatement pstmt = conn.prepareStatement(sql);
             ResultSet rs = pstmt.executeQuery()) {
-            while (rs.next()){
+            while (rs.next()) {
                 int pubYear = rs.getInt("pub_year");
                 LocalDate orderDate = rs.getDate("order_date").toLocalDate();
-                int charge = ChargePolicy.calculateDvdCharge(pubYear,orderDate);
+                int charge = ChargePolicy.calculateDvdCharge(pubYear, orderDate);
                 totalCharges += charge;
             }
         }
         return totalCharges;
-
     }
 
     private void updateMovieRentalStatus(
-            Connection conn, int serialNumber, String possible) throws Exception {
-        String sql = "UPDATE MOVIES SET RENTAL = ? WHERE SERIAL_NUMBER = ?";
-        try(PreparedStatement pstmt = conn.prepareStatement(sql)){
-            pstmt.setString(1,possible);
+            Connection conn,
+            int serialNumber,
+            String possible) throws Exception {
+
+        String sql = "UPDATE movies SET rental = ?, stock = stock ";
+        if(possible == "N"){
+            sql += " -1 ";
+        }
+        else {
+            sql += " +1 ";
+        }
+        sql += " WHERE serial_number = ?";
+
+        try(PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setString(1, possible);
             pstmt.setInt(2, serialNumber);
             pstmt.executeUpdate();
         }
-
     }
 
-    // 새 대여 주문 추가
-    private void addOrder(Connection conn,Order order) throws Exception{
-        String sql = "INSERT INTO ORDERS VALUES(order_seq.NEXTVAL, ?, ?, ?, ?) ";
-        try(PreparedStatement prtmt = conn.prepareStatement(sql)) {
-            prtmt.setInt(1,order.getUser().getUserNumber());
-            prtmt.setInt(2,order.getMovie().getSerialNumber());
-            prtmt.setDate(3, Date.valueOf(order.getOrderDate()));
-            prtmt.setDate(4, Date.valueOf(order.getReturnDate()));
+    public void updateReturnProcess(
+            int orderId,
+            int serialNumber,
+            String possible) {
+        Connection conn = null;
+        try {
+            conn = DBConnectionManager.getConnection();
+            conn.setAutoCommit(false);
 
-            prtmt.executeUpdate();
+            // 대여 반납 상태를 Y로 변경
+            updateReturnStatus(conn, orderId, possible);
 
+            // 영화 대여 가능 상태를 Y로 변경
+            updateMovieRentalStatus(conn, serialNumber, possible);
+
+            conn.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                conn.rollback();
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+                conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
     }
 
+    private void updateReturnStatus(
+            Connection conn,
+            int orderId,
+            String possible) throws Exception {
+        String sql = "UPDATE orders SET return_status = ?  WHERE order_id = ?";
+        try(PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, possible);
+            pstmt.setInt(2, orderId);
+            pstmt.executeUpdate();
+        }
+    }
+
+    // 새 대여 주문 추가
+    private void addOrder(Connection conn, Order order) throws Exception {
 
 
+        String sql = "INSERT INTO orders VALUES(order_seq.NEXTVAL, ?, ?, ?, ?, ?)";
+
+        try(PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, order.getUser().getUserNumber());
+            pstmt.setInt(2, order.getMovie().getSerialNumber());
+            pstmt.setDate(3, Date.valueOf(order.getOrderDate()));
+            pstmt.setDate(4, Date.valueOf(order.getReturnDate()));
+            pstmt.setString(5, "N");
+
+            pstmt.executeUpdate();
+
+        }
+
+    }
+
+    // 대여항목 재고 확인.
+    private int getStock(Connection conn, Order order){
 
 
+        String sql = "SELECT STOCK FROM MOVIES WHERE SERIAL_NUMBER = ? ";
 
+        try(PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, order.getMovie().getSerialNumber());
+            ResultSet rs =pstmt.executeQuery();
+            int stock = 0;
+            while (rs.next()){
+                stock = rs.getInt("STOCK");
+            }
+            if(stock == 0){
+                System.out.println("해당 영화의 재고 수량이 없습니다.");
+                throw new Exception();
+            }
+            else {
+                return stock;
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return 0;
+    }
 
 }
